@@ -1,11 +1,29 @@
 use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
-use std::env;
+use clap::{Parser, Subcommand};
 
 const REGISTERS_W0: [&str; 8] = ["al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"];
 const REGISTERS_W1: [&str; 8] = ["ax", "cx", "dx", "bx", "sp", "bp", "si", "di"];
 const MEMORY: [&str; 8] = ["bx + si", "bx + di", "bp + si", "bp + di", "si", "di", "bp", "bx"];
+
+#[derive(Parser, Debug)]
+struct Args {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    Decode {
+        #[arg(short='f')]
+        file: String,
+    },
+    Exec {
+        #[arg(short='f')]
+        file: String,
+    },
+}
 
 #[derive(Debug)]
 enum OperandType {
@@ -54,6 +72,33 @@ impl Display for Instruction {
                     None => write!(f, "{} {}", self.opcode, self.data.unwrap()),
                 }
             },
+        }
+    }
+}
+
+impl Instruction {
+    fn execute(&self, registers: &mut Vec<i32>) {
+        match self.opcode {
+            "mov" => {
+                match self.oprand_type {
+                    OperandType::ImmReg => {
+                        let reg_text = self.reg.as_ref().unwrap();
+                        let reg = REGISTERS_W1.iter().position(|&r| r == reg_text).unwrap();
+                        let data = match self.negative_data {
+                            Some(data) => data,
+                            None => self.data.unwrap() as i32,
+                        };
+                        println!("mov {}, {} ; {}:0x{:x}->0x{:x}", reg_text, data, reg_text, registers[reg], data);
+                        registers[reg] = data 
+                    },
+                    _ => {
+                        println!("Unimplemented");
+                    }
+                }
+            },
+            _ => {
+                println!("Unimplemented");
+            }
         }
     }
 }
@@ -340,19 +385,46 @@ fn parse_imm_arith(values: &[u8], index: &mut usize, w: bool) -> (&'static str, 
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let mut file = File::open(&args[1]).expect("file not found");
-    let mut values: Vec<u8> = Vec::new();
-    file.read_to_end(&mut values).expect("Failed to read file");
+    let args = Args::parse();
 
-    println!("bits 16\n");
+    match args.command {
+        Commands::Decode { file } => {
+            let mut file = File::open(file).expect("file not found");
+            let mut values: Vec<u8> = Vec::new();
+            file.read_to_end(&mut values).expect("Failed to read file");
 
-    let mut index = 0;
-    while index < values.len() {
-        if let Some(instruction) = parse_instruction(&values, &mut index) {
-            println!("{}", instruction);
-        } else {
-            index += 1;
+            println!("bits 16\n");
+
+            let mut index = 0;
+            while index < values.len() {
+                if let Some(instruction) = parse_instruction(&values, &mut index) {
+                    println!("{}", instruction);
+                } else {
+                    index += 1;
+                }
+            }
+        }
+        Commands::Exec { file } => {
+            let mut file = File::open(file).expect("file not found");
+            let mut values: Vec<u8> = Vec::new();
+            file.read_to_end(&mut values).expect("Failed to read file");
+
+            println!("bits 16\n");
+
+            let mut index = 0;
+            let mut registers:Vec<i32> = vec![0; 8];
+            while index < values.len() {
+                if let Some(instruction) = parse_instruction(&values, &mut index) {
+                    instruction.execute(&mut registers);
+                } else {
+                    index += 1;
+                }
+            }
+            println!("");
+            println!("Final registers:");
+            registers.iter().enumerate().for_each(|(i, v)| {
+                println!("{}: 0x{:04x} ({})", REGISTERS_W1[i], v, v);
+            })
         }
     }
 }
