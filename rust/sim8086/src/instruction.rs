@@ -53,7 +53,7 @@ impl Display for Instruction {
 }
 
 impl Instruction {
-    pub fn execute(&self, registers: &mut Vec<i32>, flag_registers: &mut Vec<u8>) {
+    pub fn execute(&self, registers: &mut Vec<i32>, flag_registers: &mut Vec<u8>, ip: &mut usize, prev_ip: &mut usize) {
         match self.opcode {
             "mov" => {
                 match self.oprand_type {
@@ -61,8 +61,49 @@ impl Instruction {
                         let reg_text = self.reg.as_ref().unwrap();
                         let reg = REGISTERS_W1.iter().position(|&r| r == reg_text).unwrap();
                         let data = self.data.unwrap() as i32;
-                        println!("mov {}, {} ; {}:0x{:x}->0x{:x}", reg_text, data, reg_text, registers[reg], data);
+                        println!(
+                            "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
+                            reg_text,
+                            data,
+                            reg_text,
+                            registers[reg],
+                            data,
+                            *prev_ip,
+                            *ip
+                        );
                         registers[reg] = data 
+                    },
+                    OperandType::RegMem => {
+                        // currently only supports register to register
+                        let reg_text = self.reg.as_ref().unwrap();
+                        let reg = REGISTERS_W1.iter().position(|&r| r == reg_text).unwrap();
+                        let rm_text = self.rm.as_ref().unwrap();
+                        let rm = REGISTERS_W1.iter().position(|&r| r == rm_text).unwrap();
+                        if self.d.unwrap() {
+                            println!(
+                                "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
+                                reg_text,
+                                rm_text,
+                                reg_text,
+                                registers[reg],
+                                registers[rm],
+                                *prev_ip,
+                                *ip
+                            );
+                            registers[reg] = registers[rm]
+                        } else {
+                            println!(
+                                "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
+                                rm_text,
+                                reg_text,
+                                rm_text,
+                                registers[rm],
+                                registers[reg],
+                                *prev_ip,
+                                *ip
+                            );
+                            registers[rm] = registers[reg]
+                        }
                     },
                     _ => {
                         println!("Unimplemented");
@@ -77,7 +118,17 @@ impl Instruction {
                         let data = self.data.unwrap() as i32;
                         let result = registers[reg] + data;
                         let flags = update_flag(flag_registers, result);
-                        println!("add {}, {} ; {}:0x{:x}->0x{:x} {}", reg_text, data, reg_text, registers[reg], result, flags);
+                        println!(
+                            "add {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
+                            reg_text,
+                            data,
+                            reg_text,
+                            registers[reg],
+                            result,
+                            *prev_ip,
+                            *ip,
+                            flags,
+                        );
                         registers[reg] = result
                     },
                     OperandType::RegMem => {
@@ -89,12 +140,32 @@ impl Instruction {
                         if self.d.unwrap() {
                             let result = registers[reg] + registers[rm];
                             let flags = update_flag(flag_registers, result);
-                            println!("add {}, {} ; {}:0x{:x}->0x{:x} {}", reg_text, rm_text, reg_text, registers[reg], result, flags);
+                            println!(
+                                "add {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
+                                reg_text,
+                                rm_text,
+                                reg_text,
+                                registers[reg],
+                                result,
+                                *prev_ip,
+                                *ip,
+                                flags,
+                            );
                             registers[reg] = result
                         } else {
                             let result = registers[rm] + registers[reg];
                             let flags = update_flag(flag_registers, result);
-                            println!("add {}, {} ; {}:0x{:x}->0x{:x} {}", rm_text, reg_text, rm_text, registers[rm], result, flags);
+                            println!(
+                                "add {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
+                                rm_text,
+                                reg_text,
+                                rm_text,
+                                registers[rm],
+                                result,
+                                *prev_ip,
+                                *ip,
+                                flags,
+                            );
                             registers[rm] = result
                         }
                     },
@@ -111,7 +182,17 @@ impl Instruction {
                         let data = self.data.unwrap() as i32;
                         let result = registers[reg] - data;
                         let flags = update_flag(flag_registers, result);
-                        println!("sub {}, {} ; {}:0x{:x}->0x{:x} {}", reg_text, data, reg_text, registers[reg], result, flags);
+                        println!(
+                            "sub {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
+                            reg_text,
+                            data,
+                            reg_text,
+                            registers[reg],
+                            result,
+                            *prev_ip,
+                            *ip,
+                            flags,
+                        );
                         registers[reg] = result
                     },
                     OperandType::RegMem => {
@@ -123,12 +204,32 @@ impl Instruction {
                         if self.d.unwrap() {
                             let result = registers[reg] - registers[rm];
                             let flags = update_flag(flag_registers, result);
-                            println!("sub {}, {} ; {}:0x{:x}->0x{:x} {}", reg_text, rm_text, reg_text, registers[reg], result, flags);
+                            println!(
+                                "sub {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
+                                reg_text,
+                                rm_text,
+                                reg_text,
+                                registers[reg],
+                                result,
+                                *prev_ip,
+                                *ip,
+                                flags,
+                            );
                             registers[reg] = result
                         } else {
                             let result = registers[rm] - registers[reg];
                             let flags = update_flag(flag_registers, result);
-                            println!("sub {}, {} ; {}:0x{:x}->0x{:x} {}", rm_text, reg_text, rm_text, registers[rm], result, flags);
+                            println!(
+                                "sub {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
+                                rm_text,
+                                reg_text,
+                                rm_text,
+                                registers[rm],
+                                result,
+                                *prev_ip,
+                                *ip,
+                                flags,
+                            );
                             registers[rm] = result
                         }
                     },
@@ -145,7 +246,14 @@ impl Instruction {
                         let data = self.data.unwrap() as i32;
                         let result = registers[reg] - data;
                         let flags = update_flag(flag_registers, result);
-                        println!("cmp {}, {} {}", reg_text, data, flags);
+                        println!(
+                            "cmp {}, {} ip:0x{:x}->0x{:x} {}",
+                            reg_text,
+                            data,
+                            *prev_ip,
+                            *ip,
+                            flags,
+                        );
                     },
                     OperandType::RegMem => {
                         // currently only supports register to register
@@ -156,11 +264,25 @@ impl Instruction {
                         if self.d.unwrap() {
                             let result = registers[reg] - registers[rm];
                             let flags = update_flag(flag_registers, result);
-                            println!("cmp {}, {} {}", reg_text, rm_text, flags);
+                            println!(
+                                "cmp {}, {} ip:0x{:x}->0x{:x} {}",
+                                reg_text,
+                                rm_text,
+                                *prev_ip,
+                                *ip,
+                                flags,
+                            );
                         } else {
                             let result = registers[rm] - registers[reg];
                             let flags = update_flag(flag_registers, result);
-                            println!("cmp {}, {} {}", rm_text, reg_text, flags);
+                            println!(
+                                "cmp {}, {} ip:0x{:x}->0x{:x} {}",
+                                rm_text,
+                                reg_text,
+                                *prev_ip,
+                                *ip,
+                                flags,
+                            );
                         }
                     },
                     _ => {
@@ -168,6 +290,19 @@ impl Instruction {
                     }
                 }
             }
+            "jne" => {
+                let data = match self.negative_data {
+                    Some(data) => data,
+                    None => self.data.unwrap() as i32,
+                };
+                let difference = *ip as i32 - *prev_ip as i32;
+                let current_ip = *prev_ip;
+                if flag_registers[0] == 0 {
+                    *ip = (*ip as i32 + data) as usize;
+                    *prev_ip = *ip;
+                }
+                println!("jne ${} ; ip:0x{:x}->0x{:x}", data + difference, current_ip, *ip,);
+            },
             _ => {
                 println!("Unimplemented");
             }

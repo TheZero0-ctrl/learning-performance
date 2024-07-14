@@ -363,20 +363,24 @@ fn main() {
             println!("bits 16\n");
 
             let mut index = 0;
+            let mut prev_index = 0;
             let mut registers:Vec<i32> = vec![0; 8];
             let mut flag_register:Vec<u8> = vec![0; 2];
             while index < values.len() {
                 if let Some(instruction) = parse_instruction(&values, &mut index) {
-                    instruction.execute(&mut registers, &mut flag_register);
+                    instruction.execute(&mut registers, &mut flag_register, &mut index, &mut prev_index);
                 } else {
                     index += 1;
                 }
+
+                prev_index = index;
             }
             println!("");
             println!("Final registers:");
             registers.iter().enumerate().for_each(|(i, v)| {
                 println!("{}: 0x{:04x} ({})", REGISTERS_W1[i], v, v);
             });
+            println!("ip: 0x{:04x} ({})", index, index);
             let mut flags = "Flags: ".to_string();
             if flag_register[0] == 1 {
                flags.push_str("Z"); 
