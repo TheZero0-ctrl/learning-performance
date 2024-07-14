@@ -1,11 +1,9 @@
-use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
 use clap::{Parser, Subcommand};
+use sim8086::instruction::{Instruction, OperandType};
+use sim8086::{MEMORY, REGISTERS_W0, REGISTERS_W1};
 
-const REGISTERS_W0: [&str; 8] = ["al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"];
-const REGISTERS_W1: [&str; 8] = ["ax", "cx", "dx", "bx", "sp", "bp", "si", "di"];
-const MEMORY: [&str; 8] = ["bx + si", "bx + di", "bp + si", "bp + di", "si", "di", "bp", "bx"];
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -23,84 +21,6 @@ enum Commands {
         #[arg(short='f')]
         file: String,
     },
-}
-
-#[derive(Debug)]
-enum OperandType {
-    RegMem,  // Register/Memory to/from Register
-    ImmReg,  // Immediate to Register
-    ImmRm,   // Immediate to Register/Memory
-    Jump,    // Jump
-}
-
-#[derive(Debug)]
-struct Instruction {
-    opcode: &'static str,
-    oprand_type: OperandType,
-    reg: Option<String>,
-    rm: Option<String>,
-    d: Option<bool>,
-    data: Option<u16>,
-    negative_data: Option<i32>,
-}
-
-impl Display for Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self.oprand_type {
-            OperandType::RegMem => {
-                if self.d.unwrap() {
-                    write!(f, "{} {}, {}", self.opcode, self.reg.as_ref().unwrap(), self.rm.as_ref().unwrap())
-                } else {
-                    write!(f, "{} {}, {}", self.opcode, self.rm.as_ref().unwrap(), self.reg.as_ref().unwrap())
-                }
-            },
-            OperandType::ImmReg => {
-                match self.negative_data {
-                    Some(data) => write!(f, "{} {}, {}", self.opcode, self.reg.as_ref().unwrap(), data),
-                    None => write!(f, "{} {}, {}", self.opcode, self.reg.as_ref().unwrap(), self.data.unwrap()),
-                }
-            },
-            OperandType::ImmRm => {
-                match self.negative_data {
-                    Some(data) => write!(f, "{} {}, {}", self.opcode, self.rm.as_ref().unwrap(), data),
-                    None => write!(f, "{} {}, {}", self.opcode, self.rm.as_ref().unwrap(), self.data.unwrap()),
-                }
-            },
-            OperandType::Jump => {
-                match self.negative_data {
-                    Some(data) => write!(f, "{} {}", self.opcode, data),
-                    None => write!(f, "{} {}", self.opcode, self.data.unwrap()),
-                }
-            },
-        }
-    }
-}
-
-impl Instruction {
-    fn execute(&self, registers: &mut Vec<i32>) {
-        match self.opcode {
-            "mov" => {
-                match self.oprand_type {
-                    OperandType::ImmReg => {
-                        let reg_text = self.reg.as_ref().unwrap();
-                        let reg = REGISTERS_W1.iter().position(|&r| r == reg_text).unwrap();
-                        let data = match self.negative_data {
-                            Some(data) => data,
-                            None => self.data.unwrap() as i32,
-                        };
-                        println!("mov {}, {} ; {}:0x{:x}->0x{:x}", reg_text, data, reg_text, registers[reg], data);
-                        registers[reg] = data 
-                    },
-                    _ => {
-                        println!("Unimplemented");
-                    }
-                }
-            },
-            _ => {
-                println!("Unimplemented");
-            }
-        }
-    }
 }
 
 fn look_up_reg(reg: usize, w: bool) -> String {
@@ -158,15 +78,31 @@ fn parse_instruction(values: &[u8], index: &mut usize) -> Option<Instruction> {
 }
 
 fn parse_immediate_to_register(values: &[u8], index: &mut usize) -> Option<Instruction> {
+    // println!("immediate to register");
     let value = values[*index];
     let w = (value >> 3) & 0b1 != 0;
     let reg = (value & 0b111) as usize;
-    let data = if w {
+    let (data, negative_data) = if w {
         *index += 3;
-        u16::from_le_bytes([values[*index - 2], values[*index - 1]])
+        let raw_data = u16::from_le_bytes([values[*index - 2], values[*index - 1]]);
+        let is_negative = raw_data & 0b1000_0000_0000_0000 != 0;
+        let negative_data = if is_negative {
+            Some(((65535 - raw_data + 1) as i32) * -1)
+        } else {
+            None
+        };
+
+        (raw_data, negative_data)
     } else {
         *index += 2;
-        values[*index - 1] as u16
+        let raw_data = values[*index - 1] as u16;
+        let is_negative = raw_data & 0b1000_0000 != 0;
+        let negative_data = if is_negative {
+            Some(((256 - raw_data) as i32) * -1)
+        } else {
+            None
+        };
+        (raw_data, negative_data)
     };
 
     Some(Instruction {
@@ -176,11 +112,12 @@ fn parse_immediate_to_register(values: &[u8], index: &mut usize) -> Option<Instr
         rm: None,
         d: None,
         data: Some(data),
-        negative_data: None,
+        negative_data
     })
 }
 
 fn parse_to_accumulator(values: &[u8], index: &mut usize, opcode: &'static str) -> Option<Instruction> {
+    // println!("to accumulator");
     // println!("{:?}", values);
     let value = values[*index];
     let w = value & 0b1 != 0;
@@ -235,6 +172,9 @@ fn parse_general_instruction(
     values: &[u8],
     index: &mut usize,
 ) -> Option<Instruction> {
+    // println!("general instruction");
+    // println!("{:?}", values);
+    // println!("{}", *index);
     let value = values[*index];
     // println!("{:06b}", (value >> 2) & 0b111111);
     let opcode = match (value >> 2) & 0b111111 {
@@ -263,9 +203,12 @@ fn parse_general_instruction(
     }
 }
 
+// Memory mode no displacement unless r/m is 110 then there will be 16 bit displacement
 fn parse_mod_00(values: &[u8], index: &mut usize, opcode: &'static str, w: bool, d: bool, reg: usize, rm: usize) -> Option<Instruction> {
+    // println!("mod_00);
+    // println!("{:?}", values);
     let (oprand_type, opcode, reg_value, rm_value, data) = if opcode == "imm_arith" {
-        let (opcode, data) = parse_imm_arith(values, index, w);
+        let (opcode, data) = parse_imm_arith(values, index, w, 0);
         (OperandType::ImmRm, opcode, None, Some(format!("[{}]", MEMORY[rm])), Some(data))
     } else {
         if rm == 6 {
@@ -294,7 +237,9 @@ fn parse_mod_00(values: &[u8], index: &mut usize, opcode: &'static str, w: bool,
     })
 }
 
+// Memory mode with 8bit displacement
 fn parse_mod_01(values: &[u8], index: &mut usize, opcode: &'static str, w: bool, d: bool, reg: usize, rm: usize) -> Option<Instruction> {
+    println!("mod_01");
     let displacement = values[*index + 2] as u16;
     let rm_value = if displacement == 0 {
         format!("[{}]", MEMORY[rm])
@@ -315,10 +260,13 @@ fn parse_mod_01(values: &[u8], index: &mut usize, opcode: &'static str, w: bool,
 }
 
 
+// Memory mode with 16bit displacement
 fn parse_mod_10(values: &[u8], index: &mut usize, opcode: &'static str, w: bool, d: bool, reg: usize, rm: usize) -> Option<Instruction> {
+    println!("mod_10");
+    // println!("{:?}", values);
     let displacement = u16::from_le_bytes([values[*index + 2], values[*index + 3]]);
     let (oprand_type, opcode, reg_value, data) = if opcode == "imm_arith" {
-        let (opcode, data) = parse_imm_arith(values, index, w);
+        let (opcode, data) = parse_imm_arith(values, index, w, 2);
         (OperandType::ImmRm, opcode, None, Some(data))
     } else {
         *index += 4;
@@ -342,10 +290,13 @@ fn parse_mod_10(values: &[u8], index: &mut usize, opcode: &'static str, w: bool,
     })
 }
 
+// Register mode no displacement
 fn parse_mod_11(values: &[u8], index: &mut usize, opcode: &'static str, w: bool, d: bool, reg: usize, rm: usize) -> Option<Instruction> {
+    // println!("mod_11");
     let (oprand_type, opcode, reg, data) = if opcode == "imm_arith" {
-        let (opcode, data) = parse_imm_arith(values, index, w);
-        (OperandType::ImmReg, opcode, (values[*index + 1] & 0b111) as usize, Some(data))
+        let original_index = *index;
+        let (opcode, data) = parse_imm_arith(values, index, w, 0);
+        (OperandType::ImmReg, opcode, (values[original_index + 1] & 0b111) as usize, Some(data))
     } else {
         *index += 2;
         (OperandType::RegMem, opcode, reg, None)
@@ -362,7 +313,7 @@ fn parse_mod_11(values: &[u8], index: &mut usize, opcode: &'static str, w: bool,
     })
 }
 
-fn parse_imm_arith(values: &[u8], index: &mut usize, w: bool) -> (&'static str, u16) {
+fn parse_imm_arith(values: &[u8], index: &mut usize, w: bool, displacement: i32) -> (&'static str, u16) {
     let opcode = match (values[*index + 1] >> 3) & 0b111 {
         0b000 => "add",
         0b101 => "sub",
@@ -372,12 +323,12 @@ fn parse_imm_arith(values: &[u8], index: &mut usize, w: bool) -> (&'static str, 
 
     let s = (values[*index] >> 1) & 0b1 != 0;
     let data = if w && !s {
-        let data = u16::from_le_bytes([values[*index + 2], values[*index + 3]]);
-        *index += 4;
+        let data = u16::from_le_bytes([values[*index + 2 + displacement as usize], values[*index + 3 + displacement as usize]]);
+        *index += 4 + displacement as usize;
         data
     } else {
-        let data = values[*index + 2] as u16;
-        *index += 3;
+        let data = values[*index + 2 + displacement as usize] as u16;
+        *index += 3 + displacement as usize;
         data
     };
 
@@ -413,9 +364,10 @@ fn main() {
 
             let mut index = 0;
             let mut registers:Vec<i32> = vec![0; 8];
+            let mut flag_register:Vec<u8> = vec![0; 2];
             while index < values.len() {
                 if let Some(instruction) = parse_instruction(&values, &mut index) {
-                    instruction.execute(&mut registers);
+                    instruction.execute(&mut registers, &mut flag_register);
                 } else {
                     index += 1;
                 }
@@ -424,7 +376,16 @@ fn main() {
             println!("Final registers:");
             registers.iter().enumerate().for_each(|(i, v)| {
                 println!("{}: 0x{:04x} ({})", REGISTERS_W1[i], v, v);
-            })
+            });
+            let mut flags = "Flags: ".to_string();
+            if flag_register[0] == 1 {
+               flags.push_str("Z"); 
+            }
+
+            if flag_register[1] == 1 {
+               flags.push_str("S"); 
+            }
+            println!("{}", flags);
         }
     }
 }
