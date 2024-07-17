@@ -1,5 +1,6 @@
 use std::fmt::Display;
-use crate::REGISTERS_W1;
+use regex::Regex;
+use crate::{REGISTERS_W1, MEMORY};
 
 #[derive(Debug)]
 pub struct Instruction {
@@ -10,6 +11,7 @@ pub struct Instruction {
     pub d: Option<bool>,
     pub data: Option<u16>,
     pub negative_data: Option<i32>,
+    pub mode: Option<Mode>,
 }
 
 #[derive(Debug)]
@@ -18,6 +20,14 @@ pub enum OperandType {
     ImmReg,  // Immediate to Register
     ImmRm,   // Immediate to Register/Memory
     Jump,    // Jump
+}
+
+#[derive(Debug)]
+pub enum Mode {
+    Mode00,
+    Mode01,
+    Mode10,
+    Mode11,
 }
 
 impl Display for Instruction {
@@ -53,7 +63,14 @@ impl Display for Instruction {
 }
 
 impl Instruction {
-    pub fn execute(&self, registers: &mut Vec<i32>, flag_registers: &mut Vec<u8>, ip: &mut usize, prev_ip: &mut usize) {
+    pub fn execute(
+        &self,
+        registers: &mut Vec<i32>,
+        flag_registers: &mut Vec<u8>,
+        ip: &mut usize,
+        prev_ip: &mut usize,
+        memory: &mut Vec<u8>
+    ) {
         match self.opcode {
             "mov" => {
                 match self.oprand_type {
@@ -74,36 +91,97 @@ impl Instruction {
                         registers[reg] = data 
                     },
                     OperandType::RegMem => {
-                        // currently only supports register to register
                         let reg_text = self.reg.as_ref().unwrap();
                         let reg = REGISTERS_W1.iter().position(|&r| r == reg_text).unwrap();
                         let rm_text = self.rm.as_ref().unwrap();
-                        let rm = REGISTERS_W1.iter().position(|&r| r == rm_text).unwrap();
+                        let (rm, is_memory) = match self.mode.as_ref() {
+                            Some(mode) => {
+                                match mode {
+                                    Mode::Mode11 => {
+                                        (REGISTERS_W1.iter().position(|&r| r == rm_text).unwrap(), false)
+                                    },
+                                    _ => {
+                                        (self.get_memory_address(registers), true)
+                                    }
+                                }
+                            },
+                            None => {
+                                (REGISTERS_W1.iter().position(|&r| r == rm_text).unwrap(), false)
+                            }
+                        };
                         if self.d.unwrap() {
-                            println!(
-                                "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
-                                reg_text,
-                                rm_text,
-                                reg_text,
-                                registers[reg],
-                                registers[rm],
-                                *prev_ip,
-                                *ip
-                            );
-                            registers[reg] = registers[rm]
+                            if is_memory {
+                                let memory_address = self.get_memory_address(registers);
+                                let data = u16::from_le_bytes([memory[memory_address], memory[memory_address + 1]]) as i32;
+                                println!(
+                                    "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
+                                    reg_text,
+                                    rm_text,
+                                    reg_text,
+                                    registers[reg],
+                                    data,
+                                    *prev_ip,
+                                    *ip
+                                );
+                                registers[reg] = data;
+                            } else {
+                                println!(
+                                    "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
+                                    reg_text,
+                                    rm_text,
+                                    reg_text,
+                                    registers[reg],
+                                    registers[rm],
+                                    *prev_ip,
+                                    *ip
+                                );
+                                registers[reg] = registers[rm]
+                            }
                         } else {
-                            println!(
-                                "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
-                                rm_text,
-                                reg_text,
-                                rm_text,
-                                registers[rm],
-                                registers[reg],
-                                *prev_ip,
-                                *ip
-                            );
-                            registers[rm] = registers[reg]
+                            if is_memory {
+                                println!(
+                                    "mov {} {}, {}; ip:0x{:x}->0x{:x}",
+                                    rm_text,
+                                    reg_text,
+                                    rm_text,
+                                    *prev_ip,
+                                    *ip,
+                                );
+                                let num = registers[reg];
+                                let high: u8 = (num >> 8) as u8;
+                                let low: u8 = (num & 0xFF) as u8;
+                                let memory_address = self.get_memory_address(registers);
+                                memory[memory_address] = low;
+                                memory[memory_address + 1] = high;
+                            } else {
+                                println!(
+                                    "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
+                                    rm_text,
+                                    reg_text,
+                                    rm_text,
+                                    registers[rm],
+                                    registers[reg],
+                                    *prev_ip,
+                                    *ip
+                                );
+                                registers[rm] = registers[reg]
+                            }
                         }
+                    },
+                    OperandType::ImmRm => {
+                        println!(
+                            "mov {}, {}; ip:0x{:x}->0x{:x}",
+                            self.rm.as_ref().unwrap(),
+                            self.data.unwrap(),
+                            *prev_ip,
+                            *ip
+                        );
+                        let num = self.data.unwrap();
+                        let high: u8 = (num >> 8) as u8;
+                        let low: u8 = (num & 0xFF) as u8;
+                        let memory_address = self.get_memory_address(registers);
+                        memory[memory_address] = low;
+                        memory[memory_address + 1] = high;
                     },
                     _ => {
                         println!("Unimplemented");
@@ -307,6 +385,21 @@ impl Instruction {
                 println!("Unimplemented");
             }
         }
+    }
+
+    fn get_memory_address(&self, registers: &Vec<i32>) -> usize {
+        let re = Regex::new(r"([a-zA-Z]+)|(\d+)").unwrap();
+        let mut address = 0;
+
+        for cap in re.captures_iter(&self.rm.as_ref().unwrap()) {
+            if let Some(matched_str) = cap.get(1) {
+                address += registers[REGISTERS_W1.iter().position(|&r| r == matched_str.as_str()).unwrap()] as usize;
+            }
+            if let Some(matched_int) = cap.get(2) {
+                address += matched_int.as_str().parse::<i32>().unwrap() as usize;
+            }
+        }
+        address
     }
 }
 

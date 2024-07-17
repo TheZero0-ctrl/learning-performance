@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::io::Read;
+use std::{u16, usize};
 use clap::{Parser, Subcommand};
-use sim8086::instruction::{Instruction, OperandType};
+use sim8086::instruction::{Instruction, OperandType, Mode};
 use sim8086::{MEMORY, REGISTERS_W0, REGISTERS_W1};
 
 
@@ -72,6 +73,8 @@ fn parse_instruction(values: &[u8], index: &mut usize) -> Option<Instruction> {
         parse_to_accumulator(values, index, "cmp")
     } else if look_up_jump(value & 0b11111111) != None {
         parse_jump(values, index, look_up_jump(value & 0b11111111).unwrap())
+    } else if (value >> 1) & 0b1111111 == 0b1100011 {
+        parse_immediate_to_memory(values, index, "mov")
     } else {
         parse_general_instruction(values, index)
     }
@@ -112,7 +115,8 @@ fn parse_immediate_to_register(values: &[u8], index: &mut usize) -> Option<Instr
         rm: None,
         d: None,
         data: Some(data),
-        negative_data
+        negative_data,
+        mode: None,
     })
 }
 
@@ -145,6 +149,7 @@ fn parse_to_accumulator(values: &[u8], index: &mut usize, opcode: &'static str) 
         d: None,
         data: Some(data),
         negative_data,
+        mode: None,
     })
 }
 
@@ -165,6 +170,57 @@ fn parse_jump(values: &[u8], index: &mut usize, opcode: &'static str) -> Option<
         d: None,
         data: Some(data),
         negative_data,
+        mode: None,
+    })
+}
+
+fn parse_immediate_to_memory(values: &[u8], index: &mut usize, opcode: &'static str) -> Option<Instruction> {
+    // println!("immediate to memory");
+    // println!("{:?}", values);
+    let value = values[*index];
+    let w = value & 0b1 != 0;
+    let rm = (values[*index + 1] & 0b111) as usize;
+    let mode = (values[*index + 1] >> 6) & 0b11;
+
+    let (displacement, mode) = match mode {
+        0b00 => {
+            if rm == 6 {
+                let dis = u16::from_le_bytes([values[*index + 2], values[*index + 3]]);
+                *index += 4;
+                (dis, Mode::Mode00)
+            } else {
+                panic!("Not supported");
+            }
+        },
+        0b01 => {
+            let dis = values[*index + 2] as u16;
+            *index += 3;
+            (dis, Mode::Mode01)
+        },
+        0b10 => {
+            let dis = u16::from_le_bytes([values[*index + 2], values[*index + 3]]);
+            *index += 4;
+            (dis, Mode::Mode10)
+        },
+        _ => panic!("Not supported"),
+    };
+    let rm_value = format!("[{} + {}]", MEMORY[rm], displacement);
+    let data = if w {
+        *index += 2;
+        u16::from_le_bytes([values[*index - 2], values[*index - 1]])
+    } else {
+        *index += 2;
+        values[*index - 1] as u16
+    };
+    Some(Instruction {
+        opcode,
+        oprand_type: OperandType::ImmRm,
+        reg: None,
+        rm: Some(rm_value),
+        d: None,
+        data: Some(data),
+        negative_data: None,
+        mode: Some(mode)
     })
 }
 
@@ -234,6 +290,7 @@ fn parse_mod_00(values: &[u8], index: &mut usize, opcode: &'static str, w: bool,
         d: Some(d),
         data,
         negative_data: None,
+        mode: Some(Mode::Mode00)
     })
 }
 
@@ -256,13 +313,14 @@ fn parse_mod_01(values: &[u8], index: &mut usize, opcode: &'static str, w: bool,
         d: Some(d),
         data: None,
         negative_data: None,
+        mode: Some(Mode::Mode01)
     })
 }
 
 
 // Memory mode with 16bit displacement
 fn parse_mod_10(values: &[u8], index: &mut usize, opcode: &'static str, w: bool, d: bool, reg: usize, rm: usize) -> Option<Instruction> {
-    println!("mod_10");
+    // println!("mod_10");
     // println!("{:?}", values);
     let displacement = u16::from_le_bytes([values[*index + 2], values[*index + 3]]);
     let (oprand_type, opcode, reg_value, data) = if opcode == "imm_arith" {
@@ -287,6 +345,7 @@ fn parse_mod_10(values: &[u8], index: &mut usize, opcode: &'static str, w: bool,
         d: Some(d),
         data,
         negative_data: None,
+        mode: Some(Mode::Mode10)
     })
 }
 
@@ -310,6 +369,7 @@ fn parse_mod_11(values: &[u8], index: &mut usize, opcode: &'static str, w: bool,
         d: Some(d),
         data,
         negative_data: None,
+        mode: Some(Mode::Mode11)
     })
 }
 
@@ -366,9 +426,16 @@ fn main() {
             let mut prev_index = 0;
             let mut registers:Vec<i32> = vec![0; 8];
             let mut flag_register:Vec<u8> = vec![0; 2];
+            let mut memory:Vec<u8> = vec![0; 65535]; 
             while index < values.len() {
                 if let Some(instruction) = parse_instruction(&values, &mut index) {
-                    instruction.execute(&mut registers, &mut flag_register, &mut index, &mut prev_index);
+                    instruction.execute(
+                        &mut registers,
+                        &mut flag_register,
+                        &mut index,
+                        &mut prev_index,
+                        &mut memory
+                    );
                 } else {
                     index += 1;
                 }
