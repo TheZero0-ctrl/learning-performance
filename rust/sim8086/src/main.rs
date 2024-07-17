@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::io::Write;
 use std::io::Read;
 use std::{u16, usize};
 use clap::{Parser, Subcommand};
@@ -21,6 +22,10 @@ enum Commands {
     Exec {
         #[arg(short='f')]
         file: String,
+
+        /// flag for dumping memory to data file 
+        #[arg(short, long)]
+        dump: bool,
     },
 }
 
@@ -184,6 +189,7 @@ fn parse_immediate_to_memory(values: &[u8], index: &mut usize, opcode: &'static 
 
     let (displacement, mode) = match mode {
         0b00 => {
+            println!("{:?}", values);
             if rm == 6 {
                 let dis = u16::from_le_bytes([values[*index + 2], values[*index + 3]]);
                 *index += 4;
@@ -209,7 +215,7 @@ fn parse_immediate_to_memory(values: &[u8], index: &mut usize, opcode: &'static 
         *index += 2;
         u16::from_le_bytes([values[*index - 2], values[*index - 1]])
     } else {
-        *index += 2;
+        *index += 1;
         values[*index - 1] as u16
     };
     Some(Instruction {
@@ -296,7 +302,7 @@ fn parse_mod_00(values: &[u8], index: &mut usize, opcode: &'static str, w: bool,
 
 // Memory mode with 8bit displacement
 fn parse_mod_01(values: &[u8], index: &mut usize, opcode: &'static str, w: bool, d: bool, reg: usize, rm: usize) -> Option<Instruction> {
-    println!("mod_01");
+    // println!("mod_01");
     let displacement = values[*index + 2] as u16;
     let rm_value = if displacement == 0 {
         format!("[{}]", MEMORY[rm])
@@ -415,7 +421,7 @@ fn main() {
                 }
             }
         }
-        Commands::Exec { file } => {
+        Commands::Exec { file, dump } => {
             let mut file = File::open(file).expect("file not found");
             let mut values: Vec<u8> = Vec::new();
             file.read_to_end(&mut values).expect("Failed to read file");
@@ -457,6 +463,11 @@ fn main() {
                flags.push_str("S"); 
             }
             println!("{}", flags);
+
+            if dump {
+                let mut file = File::create("memory.data").expect("Failed to create file");
+                file.write_all(&memory).expect("Failed to write data");
+            }
         }
     }
 }

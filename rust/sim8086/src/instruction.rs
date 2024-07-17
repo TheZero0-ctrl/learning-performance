@@ -1,6 +1,6 @@
 use std::fmt::Display;
 use regex::Regex;
-use crate::{REGISTERS_W1, MEMORY};
+use crate::REGISTERS_W1;
 
 #[derive(Debug)]
 pub struct Instruction {
