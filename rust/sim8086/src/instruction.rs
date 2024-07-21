@@ -69,7 +69,8 @@ impl Instruction {
         flag_registers: &mut Vec<u8>,
         ip: &mut usize,
         prev_ip: &mut usize,
-        memory: &mut Vec<u8>
+        memory: &mut Vec<u8>,
+        clocks: &mut usize
     ) {
         match self.opcode {
             "mov" => {
@@ -78,10 +79,12 @@ impl Instruction {
                         let reg_text = self.reg.as_ref().unwrap();
                         let reg = REGISTERS_W1.iter().position(|&r| r == reg_text).unwrap();
                         let data = self.data.unwrap() as i32;
+                        *clocks += 4;
                         println!(
-                            "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
+                            "mov {}, {} ; Clocks: +4 = {} | {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
                             reg_text,
                             data,
+                            clocks,
                             reg_text,
                             registers[reg],
                             data,
@@ -113,10 +116,16 @@ impl Instruction {
                             if is_memory {
                                 let memory_address = self.get_memory_address(registers);
                                 let data = u16::from_le_bytes([memory[memory_address], memory[memory_address + 1]]) as i32;
+                                let ea = self.get_ea();
+                                *clocks += 8 + ea;
+
                                 println!(
-                                    "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
+                                    "mov {}, {} ; Clocks: +{} {} (8 + {}) | {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
                                     reg_text,
                                     rm_text,
+                                    8 + ea,
+                                    clocks,
+                                    ea,
                                     reg_text,
                                     registers[reg],
                                     data,
@@ -139,11 +148,15 @@ impl Instruction {
                             }
                         } else {
                             if is_memory {
+                                let ea = self.get_ea();
+                                *clocks += 9 + ea;
                                 println!(
-                                    "mov {} {}, {}; ip:0x{:x}->0x{:x}",
+                                    "mov {} {} ; Clocks: +{} {} (9 + {}) |ip:0x{:x}->0x{:x}",
                                     rm_text,
                                     reg_text,
-                                    rm_text,
+                                    9 + ea,
+                                    clocks,
+                                    ea,
                                     *prev_ip,
                                     *ip,
                                 );
@@ -154,10 +167,12 @@ impl Instruction {
                                 memory[memory_address] = low;
                                 memory[memory_address + 1] = high;
                             } else {
+                                *clocks += 2;
                                 println!(
-                                    "mov {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
+                                    "mov {}, {} ; Clocks: +2 = {} | {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x}",
                                     rm_text,
                                     reg_text,
+                                    clocks,
                                     rm_text,
                                     registers[rm],
                                     registers[reg],
@@ -196,10 +211,12 @@ impl Instruction {
                         let data = self.data.unwrap() as i32;
                         let result = registers[reg] + data;
                         let flags = update_flag(flag_registers, result);
+                        *clocks += 4;
                         println!(
-                            "add {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
+                            "add {}, {} ; Clocks: +4 = {} | {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
                             reg_text,
                             data,
+                            clocks,
                             reg_text,
                             registers[reg],
                             result,
@@ -218,10 +235,12 @@ impl Instruction {
                         if self.d.unwrap() {
                             let result = registers[reg] + registers[rm];
                             let flags = update_flag(flag_registers, result);
+                            *clocks += 3;
                             println!(
-                                "add {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
+                                "add {}, {} ; Clocks: +3 = {} | {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
                                 reg_text,
                                 rm_text,
+                                clocks,
                                 reg_text,
                                 registers[reg],
                                 result,
@@ -233,10 +252,12 @@ impl Instruction {
                         } else {
                             let result = registers[rm] + registers[reg];
                             let flags = update_flag(flag_registers, result);
+                            *clocks += 3;
                             println!(
-                                "add {}, {} ; {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
+                                "add {}, {} ; Clocks: +3 = {} | {}:0x{:x}->0x{:x} ip:0x{:x}->0x{:x} {}",
                                 rm_text,
                                 reg_text,
+                                clocks,
                                 rm_text,
                                 registers[rm],
                                 result,
@@ -400,6 +421,45 @@ impl Instruction {
             }
         }
         address
+    }
+
+    fn get_ea(&self) -> usize {
+        let re = Regex::new(r"([a-zA-Z]+)|(\d+)").unwrap();
+        let mut dispacement = 0;
+        let mut base = vec![];
+
+        for cap in re.captures_iter(&self.rm.as_ref().unwrap()) {
+            if let Some(matched_str) = cap.get(1) {
+                base.push(matched_str.as_str());
+            }
+            if let Some(_matched_int) = cap.get(2) {
+                dispacement += 1
+            }
+        }
+
+        if dispacement == 0 {
+            if base.len() == 1 {
+                5
+            } else {
+                if (base[0] == "bp" && base[1] == "di") || (base[0] == "bx" && base[1] == "si") {
+                   7
+                } else {
+                    8
+                }
+            }
+        } else {
+            if base.len() == 0 {
+                6
+            } else if base.len() == 1 {
+               9 
+            } else {
+                if (base[0] == "bp" && base[1] == "di") || (base[0] == "bx" && base[1] == "si") {
+                    11
+                } else {
+                    12
+                }
+            }
+        }
     }
 }
 

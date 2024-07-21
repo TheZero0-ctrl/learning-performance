@@ -433,6 +433,7 @@ fn main() {
             let mut registers:Vec<i32> = vec![0; 8];
             let mut flag_register:Vec<u8> = vec![0; 2];
             let mut memory:Vec<u8> = vec![0; 65535]; 
+            let mut clocks = 0;
             while index < values.len() {
                 if let Some(instruction) = parse_instruction(&values, &mut index) {
                     instruction.execute(
@@ -440,7 +441,8 @@ fn main() {
                         &mut flag_register,
                         &mut index,
                         &mut prev_index,
-                        &mut memory
+                        &mut memory,
+                        &mut clocks
                     );
                 } else {
                     index += 1;

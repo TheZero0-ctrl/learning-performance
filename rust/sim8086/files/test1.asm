@@ -1,3 +1,3 @@
 bits 16
 
-mov byte [bp + 3], 255
+add [di + 1000], cx
