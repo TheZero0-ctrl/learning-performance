@@ -24,7 +24,6 @@ def atan2(y, x)
   Math.atan2(y, x)
 end
 
-
 def reference_haversine(x0, y0, x1, y1, earth_radius = 6372.8)
   lat1 = y0
   lat2 = y1

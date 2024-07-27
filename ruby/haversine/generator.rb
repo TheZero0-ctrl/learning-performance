@@ -7,21 +7,31 @@ def generate(number, seed, type)
   initial_number = number
   random = Random.new(seed)
   sum = 0
-  max_x = type == 'cluster' ? random.rand(0..180.0) : 180.0
-  max_y = type == 'cluster' ? random.rand(0..90.0) : 90.0
+  center_x = random.rand(-180.0...180.0)
+  center_y = random.rand(-90.0...90.0)
+  angle = random.rand * 2 * Math::PI
+  radius = 100
   break_point = number / 2
   File.open('data.json', 'w') do |file|
     file.write("{\"pairs\": [\n")
     while number.positive?
       if (initial_number % break_point).zero? && type == 'cluster'
-        max_x = random.rand(0..180.0)
-        max_y = random.rand(0..90.0)
+        center_x = random.rand(-180.0...180.0)
+        center_y = random.rand(-90.0...90.0)
+        angle = random.rand * 2 * Math::PI
       end
 
-      x0 = random.rand(-max_x..max_x)
-      y0 = random.rand(-max_y..max_y)
-      x1 = random.rand(-max_x..max_x)
-      y1 = random.rand(-max_y..max_y)
+      if type == 'cluster'
+        x0 = center_x + ((random.rand * radius) * sin(angle))
+        y0 = center_y + ((random.rand * radius) * cos(angle))
+        x1 = center_x + ((random.rand * radius) * sin(angle))
+        y1 = center_y + ((random.rand * radius) * cos(angle))
+      else
+        x0 = random.rand(-180.0...180.0)
+        y0 = random.rand(-90.0...90.0)
+        x1 = random.rand(-180.0...180.0)
+        y1 = random.rand(-90.0...90.0)
+      end
 
       data = {
         'x0' => x0,
@@ -41,4 +51,3 @@ def generate(number, seed, type)
 
   puts "Sum: #{sum / initial_number}"
 end
-

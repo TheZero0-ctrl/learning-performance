@@ -5,3 +5,6 @@ target/
 .venv
 /tests
 .DS_Store
+
+# data files
+**/*.json
