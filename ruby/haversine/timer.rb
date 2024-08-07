@@ -61,3 +61,8 @@ def measure
   puts "CPU Timer: #{cpu_start} -> #{cpu_end} = #{cpu_elapsed}"
   puts "CPU Frequency: #{cpu_freq}"
 end
+
+def print_time_elapsed(label, total_cpu_elapsed, elasped)
+  percent = 100.0 * (elasped / total_cpu_elapsed.to_f)
+  puts "#{label}: #{elasped} (#{percent.round(2)}%)"
+end

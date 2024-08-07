@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require '../profiler/tracer'
+
 def radian_from_degrees(degrees)
   0.01745329251994329577 * degrees
 end
@@ -35,4 +37,13 @@ def reference_haversine(x0, y0, x1, y1, earth_radius = 6372.8)
   a = square(sin(dlat / 2.0)) + cos(radian_from_degrees(lat1)) * cos(radian_from_degrees(lat2)) * square(sin(dlon / 2.0))
   c = 2.0 * atan2(sqrt(a), sqrt(1.0 - a))
   earth_radius * c
+end
+
+def haversine_average(pairs, pair_count)
+  Profiler::Tracer.call(:function, { method_name: :haversine_average })
+  total = pairs.reduce(0) do |sum, pair|
+    sum + reference_haversine(pair['x0'], pair['y0'], pair['x1'], pair['y1'])
+  end
+
+  total / pair_count
 end

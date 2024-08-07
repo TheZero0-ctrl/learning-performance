@@ -3,23 +3,43 @@
 require './generator'
 require './json_parser'
 require './haversine'
+require '../profiler/tracer'
+require '../profiler/time_helpers'
 
-puts 'Enter number of pairs'
-number = gets.chomp.to_i
-puts 'Enter seed'
-seed = gets.chomp.to_i
-puts 'Enter type'
-type = gets.chomp
-generate(number, seed, type)
+include Profiler::TimeHelpers
 
-lexer = JsonLexer.new(File.open('./data.json', 'r'))
+# puts 'Enter number of pairs'
+# number = gets.chomp.to_i
+# puts 'Enter seed'
+# seed = gets.chomp.to_i
+# puts 'Enter type'
+# type = gets.chomp
+# generate(number, seed, type)
 
-parser = JsonParser.new(lexer)
-parsed_json = parser.parse
-count = parsed_json['pairs'].count
-total = parsed_json['pairs'].reduce(0) do |sum, pair|
-  sum + reference_haversine(pair['x0'], pair['y0'], pair['x1'], pair['y1'])
+def parse_json(file)
+  Profiler::Tracer.call(:function, { method_name: :parse_json })
+  lexer = JsonLexer.new(file)
+  parser = JsonParser.new(lexer)
+  parser.parse
 end
 
-average = total / count
-puts average
+def main
+  Profiler::Tracer.call(:function, { method_name: :main })
+  file = File.open('./data.json', 'r')
+
+  parsed_json = parse_json(file)
+  count = parsed_json['pairs'].count
+  sum = haversine_average(parsed_json['pairs'], count)
+  puts "Average: #{sum}"
+end
+
+main
+
+cpu_freq = estimate_cpu_timer_freq
+profile = Profiler::Tracer.profiles
+p profile
+
+total_cpu_elapsed = profile[:main]
+puts "Total Time: #{total_cpu_elapsed / cpu_freq.to_f}ms (CPU freq: #{cpu_freq})"
+print_time_elapsed('jason parse', total_cpu_elapsed, profile[:parse_json])
+print_time_elapsed('haversine sum', total_cpu_elapsed, profile[:haversine_average])

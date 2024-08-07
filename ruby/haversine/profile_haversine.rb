@@ -1,12 +1,9 @@
 require './haversine'
 require './json_parser'
-require './timer'
+require '../profiler/tracer'
+require '../profiler/time_helpers'
 
-def print_time_elapsed(label, total_cpu_elapsed, start, finish)
-  elasped = finish - start
-  percent = 100.0 * (elasped / total_cpu_elapsed.to_f)
-  puts "#{label}: #{elasped} (#{percent.round(2)}%)"
-end
+include Profiler::TimeHelpers
 
 def profile
   prof_begin = read_cpu_timer
@@ -44,12 +41,21 @@ def profile
 
   puts "Total Time: #{total_cpu_elapsed / cpu_freq.to_f}ms (CPU freq: #{cpu_freq})"
 
-  print_time_elapsed('Startup', total_cpu_elapsed, prof_begin, prof_read)
-  print_time_elapsed('Read', total_cpu_elapsed, prof_read, prof_misc_setup)
-  print_time_elapsed('Misc Setup', total_cpu_elapsed, prof_misc_setup, prof_parse)
-  print_time_elapsed('Parse', total_cpu_elapsed, prof_parse, prof_sum)
-  print_time_elapsed('Sum', total_cpu_elapsed, prof_sum, prof_misc_output)
-  print_time_elapsed('Misc Output', total_cpu_elapsed, prof_misc_output, prof_end)
+  print_time_elapsed('Startup', total_cpu_elapsed, (prof_read - prof_begin))
+  print_time_elapsed('Read', total_cpu_elapsed, (prof_misc_setup - prof_begin))
+  print_time_elapsed('Misc Setup', total_cpu_elapsed, (prof_parse - prof_misc_setup))
+  print_time_elapsed('Parse', total_cpu_elapsed, (prof_sum - prof_parse))
+  print_time_elapsed('Sum', total_cpu_elapsed, (prof_misc_output - prof_sum))
+  print_time_elapsed('Misc Output', total_cpu_elapsed, (prof_end - prof_misc_output))
 end
 
+def test
+  Profiler::Tracer.call(:function, { method_name: :test })
+  count = 100
+  sum = 0
+  count.times do
+    sum += reference_haversine(0, 0, 0, 0)
+  end
+  puts "Average: #{sum / count}"
+end
 profile
