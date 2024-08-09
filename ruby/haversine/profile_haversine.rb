@@ -50,12 +50,17 @@ def profile
 end
 
 def test
-  Profiler::Tracer.call(:function, { method_name: :test })
-  count = 100
+  Profiler::Tracer.call(:function, { name: :test })
+  count = 2
   sum = 0
-  count.times do
+
+  Profiler::Tracer.call(:block, { name: :count, count: count + 1 })
+  for i in 0..count
     sum += reference_haversine(0, 0, 0, 0)
   end
   puts "Average: #{sum / count}"
 end
-profile
+
+test
+
+p Profiler::Tracer.profiles

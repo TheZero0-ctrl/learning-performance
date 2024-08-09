@@ -40,7 +40,8 @@ def reference_haversine(x0, y0, x1, y1, earth_radius = 6372.8)
 end
 
 def haversine_average(pairs, pair_count)
-  Profiler::Tracer.call(:function, { method_name: :haversine_average })
+  Profiler::Tracer.call(:function, { name: :haversine_average })
+  Profiler::Tracer.call(:block, { name: :haversine_loop, count: pair_count })
   total = pairs.reduce(0) do |sum, pair|
     sum + reference_haversine(pair['x0'], pair['y0'], pair['x1'], pair['y1'])
   end

@@ -6,20 +6,29 @@ module Profiler
   # profiler/tracer.rb
   class Tracer
     include TimeHelpers
-    @profiles = {}
+    attr_reader :key
 
-    def initialize(events, options: {})
+    @profiles = {}
+    @active_tracers = []
+
+    def initialize(event, options)
       starting_time = read_cpu_timer
-      @trace_points = TracePoint.new(events) do |trace|
-        key = options[:name] || trace.method_id
-        if options[:line_number]
-          if trace.lineno >= options[:line_number]
-            profiles[key] = read_cpu_timer - starting_time
+      @key = options[:name]
+      profiles[key] = { count: 1 }
+      @trace_points = TracePoint.new(event) do |_trace|
+        elapsed = read_cpu_timer - starting_time
+        if event == :b_return
+          if profiles[key][:count] >= options[:count]
             disable
+            profiles[key][:elapsed] = elapsed
+            profiles[active_tracers.last][:children] = key if active_tracers.any?
+          else
+            profiles[key][:count] += 1
           end
         else
-          profiles[key] = read_cpu_timer - starting_time
           disable
+          profiles[key][:elapsed] = elapsed
+          profiles[active_tracers.last][:children] = key if active_tracers.any?
         end
       end
     end
@@ -28,38 +37,47 @@ module Profiler
       self.class.profiles
     end
 
+    def active_tracers
+      self.class.active_tracers
+    end
+
     def self.profiles
       @profiles
+    end
+
+    def self.active_tracers
+      @active_tracers
     end
 
     def self.call(type, options)
       case type
       when :function
-        tracer = new(:return, options: options)
-        tracer.enable(method_name: options[:method_name])
-      when :line
-        tracer = new(:line, options: options)
-        tracer.enable
+        tracer = new(:return, options)
+        tracer.enable(name: options[:name], add_to_tracers: !options[:is_main])
+      when :block
+        tracer = new(:b_return, options)
+        tracer.enable(add_to_tracers: !options[:is_main])
       end
     end
 
-    def enable(options = {})
-      if options[:method_name]
-        @trace_points.enable(
-          target: method(options[:method_name]),
-          target_line: options[:line_number]
-        )
+    def enable(name: nil, add_to_tracers: true)
+      if name
+        @trace_points.enable(target: method(name))
       else
         @trace_points.enable
       end
+
+      active_tracers << key if add_to_tracers
     end
 
     def disable
       @trace_points.disable
+      active_tracers.delete(key)
     end
 
-    def clear
+    def self.clear
       @profiles = {}
+      @active_tracers = []
     end
   end
 end
