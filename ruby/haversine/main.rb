@@ -33,29 +33,10 @@ def main
   puts "Average: #{sum}"
 end
 
+Profiler::Tracer.active = true
 main
 
-cpu_freq = estimate_cpu_timer_freq
 profile = Profiler::Tracer.profiles
 p profile
 
-total_cpu_elapsed = profile[:main][:elapsed]
-puts "Total Time: #{total_cpu_elapsed / cpu_freq.to_f}ms (CPU freq: #{cpu_freq})"
-print_time_elapsed(
-  'jason parse',
-  total_cpu_elapsed,
-  profile[:parse_json][:elapsed],
-  children_elapsed: profile[:parse_json][:children] && profile[profile[:parse_json][:children]][:elapsed]
-)
-print_time_elapsed(
-  'haversine sum',
-  total_cpu_elapsed,
-  profile[:haversine_average][:elapsed],
-  children_elapsed: profile[:haversine_average][:children] && profile[profile[:haversine_average][:children]][:elapsed]
-)
-print_time_elapsed(
-  'haversine loop',
-  total_cpu_elapsed,
-  profile[:haversine_loop][:elapsed],
-  children_elapsed: profile[:haversine_loop][:children] && profile[profile[:haversine_loop][:children]][:elapsed]
-)
+Profiler::Tracer.print

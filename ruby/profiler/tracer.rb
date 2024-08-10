@@ -10,74 +10,104 @@ module Profiler
 
     @profiles = {}
     @active_tracers = []
+    @active = true
+
+    class << self
+      attr_reader :profiles, :active_tracers
+      attr_accessor :active
+    end
 
     def initialize(event, options)
-      starting_time = read_cpu_timer
+      @starting_time = read_cpu_timer
       @key = options[:name]
-      profiles[key] = { count: 1 }
-      @trace_points = TracePoint.new(event) do |_trace|
-        elapsed = read_cpu_timer - starting_time
-        if event == :b_return
-          if profiles[key][:count] >= options[:count]
-            disable
-            profiles[key][:elapsed] = elapsed
-            profiles[active_tracers.last][:children] = key if active_tracers.any?
-          else
-            profiles[key][:count] += 1
-          end
-        else
-          disable
-          profiles[key][:elapsed] = elapsed
-          profiles[active_tracers.last][:children] = key if active_tracers.any?
-        end
-      end
-    end
-
-    def profiles
-      self.class.profiles
-    end
-
-    def active_tracers
-      self.class.active_tracers
-    end
-
-    def self.profiles
-      @profiles
-    end
-
-    def self.active_tracers
-      @active_tracers
+      @options = options
+      @profiles = self.class.profiles
+      @profiles[@key] ||= { count: 1, is_main: options[:is_main] }
+      @trace_points = TracePoint.new(event, &method(:trace_handler))
     end
 
     def self.call(type, options)
-      case type
-      when :function
-        tracer = new(:return, options)
-        tracer.enable(name: options[:name], add_to_tracers: !options[:is_main])
-      when :block
-        tracer = new(:b_return, options)
+      return unless active || options[:is_main]
+
+      new(type == :function ? :return : :b_return, options).tap do |tracer|
         tracer.enable(add_to_tracers: !options[:is_main])
       end
     end
 
-    def enable(name: nil, add_to_tracers: true)
-      if name
-        @trace_points.enable(target: method(name))
-      else
-        @trace_points.enable
-      end
-
-      active_tracers << key if add_to_tracers
+    def enable(add_to_tracers: true)
+      @trace_points.enable
+      self.class.active_tracers << @key if add_to_tracers
     end
 
     def disable
       @trace_points.disable
-      active_tracers.delete(key)
+      self.class.active_tracers.delete(@key)
     end
 
     def self.clear
-      @profiles = {}
-      @active_tracers = []
+      @profiles.clear
+      @active_tracers.clear
+      @active = true
+    end
+
+    def self.print
+      cpu_freq = estimate_cpu_timer_freq
+      main_profile = @profiles.values.find { |value| value[:is_main] }
+      total_cpu_elapsed = main_profile[:elapsed]
+      puts "Total Time: #{1000 * total_cpu_elapsed / cpu_freq.to_f}ms (CPU freq: #{cpu_freq})"
+
+      @profiles.each do |key, profile|
+        next if profile[:is_main]
+
+        print_time_elapsed(
+          key,
+          total_cpu_elapsed,
+          profile[:elapsed],
+          children_elapsed: profile[:children] && @profiles[profile[:children]][:elapsed]
+        )
+      end
+
+      clear
+    end
+
+    private
+
+    def trace_handler(trace)
+      elapsed = read_cpu_timer - @starting_time
+      profile = @profiles[@key]
+
+      if @options[:count]
+        handle_block_return(elapsed, profile)
+      else
+        handle_function_return(trace, elapsed, profile)
+      end
+    end
+
+    def handle_block_return(elapsed, profile)
+      if profile[:count] >= @options[:count]
+        disable
+        profile[:elapsed] = elapsed
+        update_parent_profile
+      else
+        profile[:count] += 1
+      end
+    end
+
+    def handle_function_return(trace, elapsed, profile)
+      return unless trace.method_id == @key
+
+      disable
+      if profile[:elapsed]
+        profile[:elapsed] += elapsed
+      else
+        profile[:elapsed] = elapsed
+        update_parent_profile
+      end
+    end
+
+    def update_parent_profile
+      parent_key = self.class.active_tracers.last
+      @profiles[parent_key][:children] = @key if parent_key
     end
   end
 end

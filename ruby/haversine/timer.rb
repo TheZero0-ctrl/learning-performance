@@ -11,7 +11,7 @@ def read_os_timer
 end
 
 def read_cpu_timer
-  Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID, :nanosecond)
+  Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID, :microsecond)
 end
 
 def estimate_cpu_timer_freq
@@ -66,3 +66,5 @@ def print_time_elapsed(label, total_cpu_elapsed, elasped)
   percent = 100.0 * (elasped / total_cpu_elapsed.to_f)
   puts "#{label}: #{elasped} (#{percent.round(2)}%)"
 end
+
+p estimate_cpu_timer_freq
