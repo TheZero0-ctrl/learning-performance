@@ -54,7 +54,8 @@ def test
   count = 2
   sum = 0
 
-  Profiler::Tracer.call(:block, { name: :count, count: count + 1 })
+  Profiler::Tracer.call(:block, { name: :count, count: 3, byte_count: 10})
+
   for i in 0..count
     sum += reference_haversine(0, 0, 0, 0)
   end

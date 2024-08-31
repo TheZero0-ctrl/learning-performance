@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require '../profiler/tracer'
+
 # responsible for tokenizing json
 class JsonLexer
   attr_reader :line_number
@@ -16,7 +18,7 @@ class JsonLexer
     end
 
     while @line.empty?
-      @line = @source_file.gets
+      @line = @source_file[@line_number]
       return :eof if @line.nil?
 
       @line_number += 1

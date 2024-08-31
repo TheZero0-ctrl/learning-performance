@@ -36,14 +36,14 @@ module Profiler
       cpu_freq
     end
 
-    def print_time_elapsed(label, total_cpu_elapsed, elapsed, children_elapsed: nil)
+    def print_time_elapsed(label, total_cpu_elapsed, elapsed, children_elapsed: nil, throughput: nil)
       percent = 100.0 * (elapsed / total_cpu_elapsed.to_f)
       if children_elapsed
         actual_elapsed = elapsed - children_elapsed
         actual_percent = 100.0 * (actual_elapsed / total_cpu_elapsed.to_f)
-        puts "#{label}: #{actual_elapsed} (#{actual_percent.round(2)}%, #{percent.round(2)}% w/children)"
+        puts "#{label}: #{actual_elapsed} (#{actual_percent.round(2)}%, #{percent.round(2)}% w/children) #{throughput}"
       else
-        puts "#{label}: #{elapsed} (#{percent.round(2)}%)"
+        puts "#{label}: #{elapsed} (#{percent.round(2)}%) #{throughput}"
       end
     end
   end
