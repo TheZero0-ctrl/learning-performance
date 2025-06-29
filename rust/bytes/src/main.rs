@@ -1,3 +1,8 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
+use std::usize;
+
 fn show_bytes<T: Copy>(val: T) {
     let bytes = unsafe {
         std::slice::from_raw_parts(
@@ -29,6 +34,43 @@ fn swap_hex(h1: u32, h2: u32) {
     let result = (h2 & 0xFFFFFF00) | (h1 & 0xFF);
 
     println!("Result: 0x{:08X}", result)
+}
+
+fn set_lsb_to_1(x: u32) -> u32 {
+    x | 0x00000001
+}
+
+fn get_lowest_byte(x: u32) -> u8 {
+    (x & 0xFF) as u8
+}
+
+fn shift_lowest_byte_to_second(x: u32) -> u32 {
+    (x & 0xFF) << 8
+}
+
+// 0XFF
+// 00000000 00000000 00000000 11111111
+// << 8 = 00000000 00000000 11111111 00000000
+
+fn clear_byte(x: u32, i: usize) -> u32 {
+    x & !(0xFF << (i * 8))
+}
+
+// function that inserts byte b (a u8) into byte i of x, assuming that byte i is already cleared (set to 0x00).
+fn insert_byte(x: u32, i: usize, b: u8) -> u32 {
+    x | (b as u32) << (i * 8)
+}
+
+// replace the byte at index i with b
+fn replace_byte(x: u32, i: usize, b: u8) -> u32 {
+    insert_byte(clear_byte(x, i), i, b)
+}
+
+fn swap_bytes(x: u32, i: usize, j: usize) -> u32 {
+    let byte_i = (x & (0xFF << (i * 8))) >> (i * 8);
+    let byte_j = (x & (0xFF << (j * 8))) >> (j * 8);
+    let first = replace_byte(x, i, byte_j as u8);
+    replace_byte(first, j, byte_i as u8)
 }
 
 fn main() {
@@ -79,5 +121,64 @@ fn main() {
     let y: u32 = 0x765432EF;
 
     swap_hex(x, y);
+
+    set_lsb_to_1(x);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_lsb_to_1() {
+        assert_eq!(set_lsb_to_1(0b1000), 0b1001);
+        assert_eq!(set_lsb_to_1(0b1110), 0b1111);
+        assert_eq!(set_lsb_to_1(0b1011), 0b1011);
+    }
+
+    #[test]
+    fn test_lowest_byte() {
+        assert_eq!(get_lowest_byte(0x12345678), 0x78);
+        assert_eq!(get_lowest_byte(0xABCDEF00), 0x00);
+        assert_eq!(get_lowest_byte(0x000000FF), 0xFF);
+    }
+
+    #[test]
+    fn test_shift_lowest_byte_to_second() {
+        assert_eq!(shift_lowest_byte_to_second(0x000000AB), 0x0000AB00);
+        assert_eq!(shift_lowest_byte_to_second(0x00000001), 0x00000100);
+        assert_eq!(shift_lowest_byte_to_second(0x000000FF), 0x0000FF00);
+    }
+
+    #[test]
+    fn test_clear_byte() {
+        assert_eq!(clear_byte(0x12345678, 0), 0x12345600);
+        assert_eq!(clear_byte(0x12345678, 1), 0x12340078);
+        assert_eq!(clear_byte(0xFFFFFFFF, 2), 0xFF00FFFF);
+    }
+
+    #[test]
+    fn test_insert_byte() {
+        assert_eq!(insert_byte(0x12340078, 1, 0x56), 0x12345678);
+        assert_eq!(insert_byte(0x12345600, 0, 0xAB), 0x123456AB);
+        assert_eq!(insert_byte(0x0000FFFF, 2, 0x12), 0x0012FFFF);
+    }
+
+    #[test]
+    fn test_replace_byte() {
+        assert_eq!(replace_byte(0x12345678, 0, 0xAB), 0x123456AB);
+        assert_eq!(replace_byte(0x12345678, 1, 0xAB), 0x1234AB78);
+        assert_eq!(replace_byte(0x12345678, 2, 0xAB), 0x12AB5678);
+        assert_eq!(replace_byte(0x12345678, 3, 0xAB), 0xAB345678);
+        assert_eq!(replace_byte(0xFFFFFFFF, 0, 0x00), 0xFFFFFF00);
+        assert_eq!(replace_byte(0x00000000, 2, 0xFF), 0x00FF0000);
+    }
+
+    #[test]
+    fn test_swap_bytes() {
+        assert_eq!(swap_bytes(0x12345678, 0, 1), 0x12347856);
+        assert_eq!(swap_bytes(0x12345678, 1, 2), 0x12563478);
+        assert_eq!(swap_bytes(0xAABBCCDD, 0, 3), 0xDDBBCCAA);
+    }
 }
 
